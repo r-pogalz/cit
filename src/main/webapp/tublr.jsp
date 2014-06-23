@@ -21,7 +21,7 @@
 
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"></meta>
-<title>cc-g12-tublr</title>
+<title>cc-g11-tublr</title>
 <link href="/stylesheets/default.css" rel="stylesheet" type="text/css"
 	media="all"></link>
 </head>
