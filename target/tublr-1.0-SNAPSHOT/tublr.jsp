@@ -47,7 +47,7 @@
 	</c:if>
 
 	<div class="post_form_wrap">
-		<form class="post_form" action="/tublr" method="post"
+		<form class="post_form" action="<%= blobstoreService.createUploadUrl("/tublr") %>" method="post"
 			enctype="multipart/form-data">
 
 			<h3>Post a new image:</h3>
@@ -124,7 +124,7 @@
 			%>
 
 			<div class="comment_form">
-				<form action="/tublr" method="post" enctype="multipart/form-data">
+				<form action="<%= blobstoreService.createUploadUrl("/tublr") %>" method="post" enctype="multipart/form-data">
 					Image: <input name="image" type="file" size="35"
 						maxlength="5000000" /> <br /> Message [optional]: <input
 						name="text" type="text" size="30" maxlength="30" /><br /> <input

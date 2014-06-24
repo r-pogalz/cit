@@ -2,50 +2,63 @@ package de.tuberlin.cit.tublr;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.ByteBuffer;
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.fileupload.FileItemIterator;
 import org.apache.commons.fileupload.FileItemStream;
 import org.apache.commons.fileupload.servlet.ServletFileUpload;
 import org.apache.commons.fileupload.util.Streams;
 
 import com.google.appengine.api.blobstore.BlobKey;
+import com.google.appengine.api.blobstore.BlobstoreService;
+import com.google.appengine.api.blobstore.BlobstoreServiceFactory;
 import com.google.appengine.api.datastore.DatastoreService;
 import com.google.appengine.api.datastore.DatastoreServiceFactory;
 import com.google.appengine.api.datastore.Entity;
 import com.google.appengine.api.datastore.EntityNotFoundException;
 import com.google.appengine.api.datastore.Key;
 import com.google.appengine.api.datastore.KeyFactory;
-import com.google.appengine.api.files.AppEngineFile;
-import com.google.appengine.api.files.FileService;
-import com.google.appengine.api.files.FileServiceFactory;
-import com.google.appengine.api.files.FileWriteChannel;
 import com.google.appengine.api.images.ImagesService;
 import com.google.appengine.api.images.ImagesServiceFactory;
+import com.google.appengine.api.images.ServingUrlOptions;
 
 public class TublrServlet extends HttpServlet {
+
+	private static final long serialVersionUID = 5260278144752672664L;
 
 	@Override
 	public void doPost(HttpServletRequest req, HttpServletResponse resp)
 			throws ServletException, IOException {
+		final BlobstoreService blobstoreService = BlobstoreServiceFactory
+				.getBlobstoreService();
+		final Map<String, List<BlobKey>> blobs = blobstoreService
+				.getUploads(req);
+		final List<BlobKey> blobKeys = blobs.get("image");
+		if (CollectionUtils.isEmpty(blobKeys)) {
+			req.setAttribute("errorMsg", "Missing image!");
+			req.setAttribute("hasError", true);
+			req.getRequestDispatcher("/tublr.jsp").forward(req, resp);
+			return;
+		}
+
+		final BlobKey blobKey = blobKeys.get(0);
 		String text = null;
 		String type = null;
 		Long postKeyId = null;
-		BlobKey blobKey = null;
-
 		try {
-			ServletFileUpload upload = new ServletFileUpload();
-
-			FileItemIterator iterator = upload.getItemIterator(req);
+			final ServletFileUpload upload = new ServletFileUpload();
+			final FileItemIterator iterator = upload.getItemIterator(req);
 			while (iterator.hasNext()) {
-				FileItemStream item = iterator.next();
-				InputStream stream = item.openStream();
+				final FileItemStream item = iterator.next();
+				final InputStream stream = item.openStream();
 
 				if (item.isFormField()) {
 					if ("text".equals(item.getFieldName())) {
@@ -57,36 +70,6 @@ public class TublrServlet extends HttpServlet {
 					if ("postKeyId".equals(item.getFieldName())) {
 						postKeyId = Long.parseLong(Streams.asString(stream));
 					}
-				} else {
-					FileService fileService = FileServiceFactory
-							.getFileService();
-
-					AppEngineFile file;
-
-					String mimeType = item.getContentType();
-
-					file = fileService.createNewBlobFile(mimeType);
-
-					boolean lock = true;
-
-					FileWriteChannel writeChannel = fileService
-							.openWriteChannel(file, lock);
-
-					int len;
-
-					byte[] buffer = new byte[8192];
-
-					while ((len = stream.read(buffer, 0, buffer.length)) != -1) {
-
-						ByteBuffer buf = ByteBuffer.wrap(buffer, 0, len);
-
-						writeChannel.write(buf);
-
-					}
-
-					writeChannel.closeFinally();
-
-					blobKey = fileService.getBlobKey(file);
 				}
 			}
 		} catch (Exception ex) {
@@ -95,21 +78,15 @@ public class TublrServlet extends HttpServlet {
 
 		final ImagesService imagesService = ImagesServiceFactory
 				.getImagesService();
+		final String imageUrl = imagesService
+				.getServingUrl(ServingUrlOptions.Builder.withBlobKey(blobKey));
 
-		try {
-			String imageUrl = imagesService.getServingUrl(blobKey);
-
-			if ("post".equals(type)) {
-				savePost(text, imageUrl);
-			} else if ("comment".equals(type)) {
-				saveComment(text, postKeyId, imageUrl);
-			}
-			resp.sendRedirect("/tublr.jsp");
-		} catch (IllegalArgumentException e) {
-			req.setAttribute("errorMsg", "Missing image!");
-			req.setAttribute("hasError", true);
-			req.getRequestDispatcher("/tublr.jsp").forward(req, resp);
+		if ("post".equals(type)) {
+			savePost(text, imageUrl);
+		} else if ("comment".equals(type)) {
+			saveComment(text, postKeyId, imageUrl);
 		}
+		resp.sendRedirect("/tublr.jsp");
 	}
 
 	private void saveComment(String text, long postKeyId, String imageUrl)
