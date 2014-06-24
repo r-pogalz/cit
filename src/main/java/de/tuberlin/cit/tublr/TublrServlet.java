@@ -1,22 +1,19 @@
 package de.tuberlin.cit.tublr;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.fileupload.FileItemIterator;
-import org.apache.commons.fileupload.FileItemStream;
-import org.apache.commons.fileupload.servlet.ServletFileUpload;
-import org.apache.commons.fileupload.util.Streams;
-
+import com.google.appengine.api.blobstore.BlobInfo;
+import com.google.appengine.api.blobstore.BlobInfoFactory;
 import com.google.appengine.api.blobstore.BlobKey;
 import com.google.appengine.api.blobstore.BlobstoreService;
 import com.google.appengine.api.blobstore.BlobstoreServiceFactory;
@@ -30,7 +27,17 @@ import com.google.appengine.api.images.ImagesService;
 import com.google.appengine.api.images.ImagesServiceFactory;
 import com.google.appengine.api.images.ServingUrlOptions;
 
+/**
+ * Servlet that handles POST requests for posting and image and optionally a
+ * comment. The image is stored to the blobstore. ImageUrl, comment and
+ * additional information (date, currentness of posts) are stored to the
+ * datastore.
+ * 
+ */
 public class TublrServlet extends HttpServlet {
+
+	private final static Logger LOGGER = Logger.getLogger(TublrServlet.class
+			.getName());
 
 	private static final long serialVersionUID = 5260278144752672664L;
 
@@ -41,52 +48,36 @@ public class TublrServlet extends HttpServlet {
 				.getBlobstoreService();
 		final Map<String, List<BlobKey>> blobs = blobstoreService
 				.getUploads(req);
-		final List<BlobKey> blobKeys = blobs.get("image");
-		if (CollectionUtils.isEmpty(blobKeys)) {
-			req.setAttribute("errorMsg", "Missing image!");
-			req.setAttribute("hasError", true);
+
+		final BlobKey blobKey = blobs.get("image").get(0);
+
+		final ImagesService imagesService = ImagesServiceFactory
+				.getImagesService();
+		final BlobInfo blobInfo = new BlobInfoFactory().loadBlobInfo(blobKey);
+		if (blobInfo.getSize() == 0) {
+			setMissingImageError(req);
 			req.getRequestDispatcher("/tublr.jsp").forward(req, resp);
 			return;
 		}
 
-		final BlobKey blobKey = blobKeys.get(0);
-		String text = null;
-		String type = null;
-		Long postKeyId = null;
-		try {
-			final ServletFileUpload upload = new ServletFileUpload();
-			final FileItemIterator iterator = upload.getItemIterator(req);
-			while (iterator.hasNext()) {
-				final FileItemStream item = iterator.next();
-				final InputStream stream = item.openStream();
-
-				if (item.isFormField()) {
-					if ("text".equals(item.getFieldName())) {
-						text = Streams.asString(stream);
-					}
-					if ("type".equals(item.getFieldName())) {
-						type = Streams.asString(stream);
-					}
-					if ("postKeyId".equals(item.getFieldName())) {
-						postKeyId = Long.parseLong(Streams.asString(stream));
-					}
-				}
-			}
-		} catch (Exception ex) {
-			throw new ServletException(ex);
-		}
-
-		final ImagesService imagesService = ImagesServiceFactory
-				.getImagesService();
 		final String imageUrl = imagesService
 				.getServingUrl(ServingUrlOptions.Builder.withBlobKey(blobKey));
+		final String text = req.getParameter("text");
+		final String type = req.getParameter("type");
 
 		if ("post".equals(type)) {
 			savePost(text, imageUrl);
 		} else if ("comment".equals(type)) {
+			final Long postKeyId = Long
+					.parseLong(req.getParameter("postKeyId"));
 			saveComment(text, postKeyId, imageUrl);
 		}
 		resp.sendRedirect("/tublr.jsp");
+	}
+
+	private void setMissingImageError(HttpServletRequest req) {
+		req.setAttribute("errorMsg", "Missing image!");
+		req.setAttribute("hasError", true);
 	}
 
 	private void saveComment(String text, long postKeyId, String imageUrl)
@@ -112,11 +103,13 @@ public class TublrServlet extends HttpServlet {
 			post.setProperty("currentness", now);
 			datastore.put(post);
 		} catch (EntityNotFoundException e) {
+			LOGGER.log(Level.SEVERE, "Error during updating post.", e);
 			throw new ServletException(e);
 		}
 	}
 
 	private void savePost(String text, String imageUrl) {
+		LOGGER.info("saving post.");
 		final Date now = new Date();
 		final Entity post = new Entity("Post");
 		post.setProperty("date", now);
@@ -127,5 +120,7 @@ public class TublrServlet extends HttpServlet {
 		final DatastoreService datastore = DatastoreServiceFactory
 				.getDatastoreService();
 		datastore.put(post);
+
+		LOGGER.info("post successfully stored");
 	}
 }
