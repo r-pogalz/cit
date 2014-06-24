@@ -109,7 +109,6 @@ public class TublrServlet extends HttpServlet {
 	}
 
 	private void savePost(String text, String imageUrl) {
-		LOGGER.info("saving post.");
 		final Date now = new Date();
 		final Entity post = new Entity("Post");
 		post.setProperty("date", now);
@@ -120,7 +119,5 @@ public class TublrServlet extends HttpServlet {
 		final DatastoreService datastore = DatastoreServiceFactory
 				.getDatastoreService();
 		datastore.put(post);
-
-		LOGGER.info("post successfully stored");
 	}
 }
